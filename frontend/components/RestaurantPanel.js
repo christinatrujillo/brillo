@@ -1,46 +1,14 @@
 import { View, Text, StyleSheet, TouchableOpacity, Linking, Share } from 'react-native';
 import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import { getSunStatus, SUN_STATUS } from '../utils/sunStatus';
 
 function RestaurantPanel({ restaurant, selectedTime, onClose }) {
     const [saved, setSaved] = useState(false);
     if (!restaurant) return null;
 
     const sunReport = restaurant.sunReport;
-    let currentStatus = 'unknown';
-    let statusColor = '#9CA3AF';
-    let iconName = '';
-
-    if (sunReport && sunReport.sun_path) {
-        const targetMinutes = selectedTime * 60;
-        let closest = null;
-        let closestDiff = Infinity;
-
-        for (const t of sunReport.sun_path) {
-            const [h, m] = t.time.split(':').map(Number);
-            const diff = Math.abs((h * 60 + m) - targetMinutes);
-            if (diff < closestDiff) {
-                closestDiff = diff;
-                closest = t;
-            }
-        }
-
-        if (closest) {
-            if (closest.is_sunny) {
-                currentStatus = 'Sunny';
-                iconName = 'sunny';
-                statusColor = '#F9AB55';
-            } else if (closest.is_sunny_geometry && !closest.is_sunny_weather) {
-                currentStatus = 'Cloudy';
-                iconName = 'cloudy-sharp';
-                statusColor = '#084887';
-            } else {
-                currentStatus = 'In shade';
-                iconName = 'partly-sunny-sharp';
-                statusColor = '#909CC2';
-            }
-        }
-    }
+    const status = SUN_STATUS[getSunStatus(sunReport, selectedTime)];
 
     const sunWindows = sunReport?.sun_windows || [];
     const totalSunHours = sunReport?.total_sun_hours || 0;
@@ -52,13 +20,13 @@ function RestaurantPanel({ restaurant, selectedTime, onClose }) {
             <TouchableOpacity style={styles.closeButton} onPress={onClose}>
                 <Ionicons name="close" size={20} color="#999" />
             </TouchableOpacity>
-                <Text style={styles.name}>{restaurant.name}</Text>
+            <Text style={styles.name}>{restaurant.name}</Text>
             {restaurant.address && (
                 <Text style={styles.address}>{restaurant.address}</Text>
             )}
 
             <View style={styles.infoRow}>
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={styles.infoPill}
                     onPress={() => {
                         const url = `geo:${restaurant.latitude},${restaurant.longitude}?q=${encodeURIComponent(restaurant.name)}`;
@@ -75,16 +43,16 @@ function RestaurantPanel({ restaurant, selectedTime, onClose }) {
                     </View>
                 )}
 
-                <View style={[styles.infoPill, { 
+                <View style={[styles.infoPill, {
                     backgroundColor: restaurant.outdoorSeating ? '#E8F5E9' : '#FFF3E0',
                 }]}>
-                    <Ionicons 
-                        name={restaurant.outdoorSeating ? 'checkmark-circle' : 'close-circle'} 
-                        size={14} 
-                        color={restaurant.outdoorSeating ? '#4CAF50' : '#D32F2F'} 
+                    <Ionicons
+                        name={restaurant.outdoorSeating ? 'checkmark-circle' : 'close-circle'}
+                        size={14}
+                        color={restaurant.outdoorSeating ? '#4CAF50' : '#D32F2F'}
                     />
-                    <Text style={[styles.pillText, { 
-                        color: restaurant.outdoorSeating ? '#4CAF50' : '#D32F2F' 
+                    <Text style={[styles.pillText, {
+                        color: restaurant.outdoorSeating ? '#4CAF50' : '#D32F2F'
                     }]}>
                         Terrace
                     </Text>
@@ -94,9 +62,9 @@ function RestaurantPanel({ restaurant, selectedTime, onClose }) {
             <View style={styles.divider} />
 
             <View style={styles.statusRow}>
-                <Ionicons name={iconName} size={20} color={statusColor} /> 
+                <Ionicons name={status.icon} size={20} color={status.color} />
                 <Text style={styles.statusText}>
-                    {currentStatus} at {selectedTime}:00
+                    {status.label} at {selectedTime}:00
                 </Text>
             </View>
 
@@ -137,7 +105,7 @@ function RestaurantPanel({ restaurant, selectedTime, onClose }) {
             <View style={styles.divider} />
 
             <View style={styles.buttonRow}>
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={styles.actionButton}
                     onPress={() => {
                         const url = `https://www.google.com/maps/dir/?api=1&destination=${restaurant.latitude},${restaurant.longitude}`;
@@ -147,7 +115,7 @@ function RestaurantPanel({ restaurant, selectedTime, onClose }) {
                     <Ionicons name="navigate" size={22} color="#FF785A" />
                 </TouchableOpacity>
 
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={styles.actionButton}
                     onPress={async () => {
                         await Share.share({
@@ -158,14 +126,14 @@ function RestaurantPanel({ restaurant, selectedTime, onClose }) {
                     <Ionicons name="share-outline" size={22} color="#FF785A" />
                 </TouchableOpacity>
 
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={[styles.actionButton, saved && styles.actionButtonSaved]}
                     onPress={() => setSaved(!saved)}
                 >
-                    <Ionicons 
-                        name={saved ? "heart" : "heart-outline"} 
-                        size={22} 
-                        color={saved ? "white" : "#FF785A"} 
+                    <Ionicons
+                        name={saved ? "heart" : "heart-outline"}
+                        size={22}
+                        color={saved ? "white" : "#FF785A"}
                     />
                 </TouchableOpacity>
             </View>
@@ -228,11 +196,6 @@ const styles = StyleSheet.create({
         gap: 10,
         marginBottom: 8,
     },
-    statusDot: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
-    },
     statusText: {
         fontSize: 16,
         fontFamily: 'RubikMonoOne',
@@ -276,7 +239,6 @@ const styles = StyleSheet.create({
         gap: 8,
         marginTop: 8,
         marginBottom: 4,
-        // justifyContent: 'center',
         justifyContent: 'flex-start',
     },
     infoPill: {

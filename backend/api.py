@@ -1,22 +1,18 @@
 """
-Sunny Terrace API
-Run with:   uvicorn api:app --reload
+Brillo API
+Run with:   uvicorn api:app --reload --host 0.0.0.0 --port 8000
 Docs at:    http://localhost:8000/docs
-Requires:   pip install fastapi uvicorn httpx astral
+Requires:   pip install -r requirements.txt
 """
+
+from datetime import datetime, date, timedelta
+import zoneinfo
 
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
-from datetime import datetime, date, timedelta
-import math
-from astral import Observer
-from astral.sun import elevation, azimuth
-import zoneinfo
 
-from main import (
-    Terrace, SunTracker, create_tracker_auto,
-    fetch_buildings_osm, buildings_to_obstacles,
-)
+from main import Terrace, SunTracker, buildings_to_obstacles
+from building_cache import get_buildings_near, get_weather_cached
 
 app = FastAPI(
     title="Brillo API",
@@ -31,14 +27,21 @@ def _cache_key(lat, lon):
     return f"{round(lat, 3)}:{round(lon, 3)}"
 
 
+def build_tracker(lat, lon, timezone, terrace_height=0, search_radius=100):
+    """Sun tracker for one location; buildings and weather come from the shared caches."""
+    terrace = Terrace(name="", latitude=lat, longitude=lon, timezone=timezone)
+    buildings = get_buildings_near(lat, lon, search_radius)
+    terrace.obstacles = buildings_to_obstacles(buildings, lat, lon, terrace_height)
+    tracker = SunTracker(terrace)
+    tracker._weather_cache = get_weather_cached(lat, lon, timezone, forecast_days=3)
+    return tracker
+
+
 def get_tracker(lat, lon, timezone="Europe/Paris", terrace_height=0):
-    key = _cache_key(lat, lon)
+    # Include today's date so weather gets refreshed at least daily.
+    key = f"{_cache_key(lat, lon)}:{timezone}:{terrace_height}:{date.today()}"
     if key not in _tracker_cache:
-        _tracker_cache[key] = create_tracker_auto(
-            name="", latitude=lat, longitude=lon,
-            timezone=timezone, terrace_height=terrace_height,
-            search_radius=100, include_weather=True,
-        )
+        _tracker_cache[key] = build_tracker(lat, lon, timezone, terrace_height)
     return _tracker_cache[key]
 
 
@@ -104,7 +107,30 @@ class Location(BaseModel):
 
 class BatchRequest(BaseModel):
     timezone: str = "Europe/Paris"
-    locations: list
+    locations: list[Location]
+
+
+class BatchSunReportRequest(BaseModel):
+    timezone: str = "Europe/Paris"
+    date: str | None = None
+    locations: list[Location]
+
+
+@app.post("/batch-sun-report")
+def batch_sun_report(request: BatchSunReportRequest):
+    """Full-day sun reports for many locations in one request (one per restaurant)."""
+    target = (date.fromisoformat(request.date) if request.date
+              else datetime.now(zoneinfo.ZoneInfo(request.timezone)).date())
+    results = []
+    for loc in request.locations:
+        try:
+            tracker = get_tracker(loc.lat, loc.lon, request.timezone, loc.terrace_height)
+            results.append({"id": loc.id,
+                            "report": tracker.calculate_day(target, interval_minutes=2)})
+        except Exception as e:
+            print(f"Sun report failed for {loc.id}: {e}")
+            results.append({"id": loc.id, "report": None, "error": str(e)})
+    return {"results": results}
 
 
 @app.post("/batch-check")
@@ -115,11 +141,10 @@ def batch_check(request: BatchRequest):
     results = []
     for loc in request.locations:
         try:
-            tracker = get_tracker(loc["lat"], loc["lon"],
-                                  request.timezone, loc.get("terrace_height", 0))
+            tracker = get_tracker(loc.lat, loc.lon, request.timezone, loc.terrace_height)
             is_sunny, point = tracker.is_sunny_at(now)
             results.append({
-                "id": loc["id"],
+                "id": loc.id,
                 "is_sunny": is_sunny,
                 "status_label": (
                     "sunny" if is_sunny
@@ -130,7 +155,7 @@ def batch_check(request: BatchRequest):
                 "cloud_cover": point.cloud_cover,
             })
         except Exception as e:
-            results.append({"id": loc.get("id", "?"), "error": str(e)})
+            results.append({"id": loc.id, "error": str(e)})
     return {"checked_at": now.strftime('%H:%M'), "results": results}
 
 
@@ -166,7 +191,7 @@ def get_obstacles(
     terrace_height: float = Query(0),
 ):
     """Show detected buildings around a location."""
-    buildings = fetch_buildings_osm(lat, lon, radius)
+    buildings = get_buildings_near(lat, lon, radius)
     obstacles = buildings_to_obstacles(buildings, lat, lon, terrace_height)
     return {
         "buildings_found": len(buildings),
@@ -184,78 +209,6 @@ def get_obstacles(
         ],
     }
 
-
-@app.get("/shadows")
-def get_shadows(
-    lat: float = Query(...),
-    lon: float = Query(...),
-    hour: int = Query(...),
-    minute: int = Query(0),
-    radius: int = Query(200),
-    timezone: str = Query("Europe/Madrid"),
-):
-    
-    """Calculate shadow polygons for buildings in an area at a specific time."""   
-    tz = zoneinfo.ZoneInfo(timezone)
-    now = datetime.now(tz)
-    target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-    observer = Observer(latitude=lat, longitude=lon)
-    sun_alt = elevation(observer, target_time)
-    sun_az = azimuth(observer, target_time)
-
-    # if sun is below horizon, everything is in shadow
-    if sun_alt <= 0:
-        return {
-            "time": target_time.strftime('%H:%M'),
-            "sun_altitude:": round(sun_alt, 2),
-            "sun_azimuth": round(sun_az, 2),
-            "shadows": [],
-            "message": "Sun is below the horizon"
-        }
-    
-    buildings = fetch_buildings_osm(lat, lon, radius)
-    
-    # shadow direction is opposite the sun
-    shadow_azimuth = (sun_az + 180) % 360
-    shadow_azimuth_rad = math.radians(shadow_azimuth)
-
-    shadows = []
-    for b in buildings: 
-        geometry = b.get("geometry", [])
-        if len(geometry) < 3:
-            continue
-
-        height = b["height"]
-        if height is None:
-            height = float(b.get("levels") or 4) * 3.0
-
-        shadow_length = height / math.tan(math.radians(sun_alt))
-        # cap shadow length to avoid extremely long shadows at sunrise/sunset
-        shadow_length = min(shadow_length, 200)
-
-        lat_offset = (shadow_length * math.cos(shadow_azimuth_rad)) / 111320
-        lon_offset = (shadow_length * math.sin(shadow_azimuth_rad)) / (111320 * math.cos(math.radians(lat)))
-
-        # build shadow polygon: building footprint + projected shadow of each corner
-        building_coords = [[p["lat"], p["lon"]] for p in geometry]
-        shadow_coords = [[p["lat"] + lat_offset, p["lon"] + lon_offset] for p in geometry]
-
-        polygon = building_coords + list(reversed(shadow_coords))
-
-        shadows.append({
-            "polygon": polygon,
-            "building_height": height,
-            "shadow_length": round(shadow_length, 1),
-        })
-
-    return {
-        "time": target_time.strftime('%H:%M'),
-        "sun_altitude": round(sun_alt, 2),
-        "sun_azimuth": round(sun_az, 2),
-        "shadow_count": len(shadows),
-        "shadows": shadows,
-    }
 
 @app.get("/")
 def health():

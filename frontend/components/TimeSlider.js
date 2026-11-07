@@ -3,7 +3,7 @@ import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-nativ
 import Slider from '@react-native-community/slider/dist/Slider';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function TimeSlider({ selectedTime, displayTime, onTimeChange, onTimeSlide }) {
+export default function TimeSlider({ displayTime, onTimeChange, onTimeSlide }) {
     const [isSearching, setIsSearching] = useState(false);
     const [searchText, setSearchText] = useState('');
 
@@ -11,7 +11,7 @@ export default function TimeSlider({ selectedTime, displayTime, onTimeChange, on
         return (
             <View style={styles.container}>
                 <View style={styles.sliderRow}>
-                    <TextInput 
+                    <TextInput
                         style={styles.searchInput}
                         placeholder="Search city..."
                         placeholderTextColor="white"

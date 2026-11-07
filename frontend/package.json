@@ -1,24 +1,27 @@
 {
-  "name": "frontend",
+  "name": "brillo",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
-    "@react-native-community/slider": "5.0.1",
-    "expo": "~54.0.0",
-    "expo-blur": "~15.0.8",
-    "expo-linear-gradient": "~15.0.8",
-    "expo-location": "~19.0.8",
-    "expo-status-bar": "~55.0.4",
-    "react": "19.2.0",
-    "react-native": "0.83.2",
-    "react-native-maps": "1.20.1"
+    "@react-native-community/slider": "5.2.1",
+    "@rnmapbox/maps": "10.3.11",
+    "expo": "~58.0.23",
+    "expo-linear-gradient": "~58.0.3",
+    "expo-location": "~58.0.20",
+    "expo-status-bar": "~58.0.4",
+    "react": "19.3.0",
+    "react-native": "0.88.1"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "patch-package": "^8.0.1"
+  }
 }

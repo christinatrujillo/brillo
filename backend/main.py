@@ -110,13 +110,36 @@ def fetch_buildings_osm(lat: float, lon: float, radius: int = 100) -> list[dict]
     );
     out body geom;
     """
-    url = "https://overpass-api.de/api/interpreter"
+    return parse_overpass_buildings(overpass_request(query, timeout=30))
+
+
+# Public Overpass servers, tried in order. If one refuses or times out
+# (e.g. it rate-limited us), the next one is used.
+OVERPASS_SERVERS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+]
+
+
+def overpass_request(query: str, timeout: int = 30) -> dict:
+    """POST a query to Overpass, falling back to the next server on failure."""
     data = urllib.parse.urlencode({"data": query}).encode()
-    req = urllib.request.Request(url, data=data)
+    last_error = None
+    for url in OVERPASS_SERVERS:
+        try:
+            req = urllib.request.Request(url, data=data,
+                                         headers={"User-Agent": "Brillo/1.0"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode())
+        except Exception as e:  # refused, timeout, 429/504, bad JSON...
+            print(f"Overpass server failed ({url}): {e}")
+            last_error = e
+    raise RuntimeError(f"All Overpass servers failed: {last_error}")
 
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read().decode())
 
+def parse_overpass_buildings(result: dict) -> list[dict]:
+    """Turn an Overpass JSON response into Brillo's building dicts."""
     buildings = []
     for el in result.get("elements", []):
         tags = el.get("tags", {})
@@ -142,6 +165,7 @@ def fetch_buildings_osm(lat: float, lon: float, radius: int = 100) -> list[dict]
                 pass
 
         buildings.append({
+            "id": el.get("id"),
             "name": tags.get("name", ""),
             "type": tags.get("building", "unknown"),
             "height": height,
@@ -474,9 +498,9 @@ def create_tracker_auto(name: str, latitude: float, longitude: float,
     tracker = SunTracker(terrace)
 
     if include_weather:
-        print(f"Fetching weather forecast from Open-Meteo...")
+        print("Fetching weather forecast from Open-Meteo...")
         tracker.load_weather(forecast_days=3)
-        print(f"Weather loaded")
+        print("Weather loaded")
 
     return tracker
 
@@ -497,7 +521,7 @@ if __name__ == '__main__':
         search_radius=100,
     )
 
-    print(f"\nDetected obstacles:")
+    print("\nDetected obstacles:")
     for obs in tracker.terrace.obstacles:
         print(f"   {obs.label or 'building':30s}  "
               f"az {obs.azimuth_start:>5.1f}°-{obs.azimuth_end:>5.1f}°  "
@@ -517,7 +541,7 @@ if __name__ == '__main__':
     print(f"Weather: {'yes' if report['weather_available'] else 'no'}")
     print(f"Total sun: {report['total_sun_hours']} hours")
 
-    print(f"\nSun windows:")
+    print("\nSun windows:")
     for w in report['sun_windows']:
         hrs = w['duration_minutes'] // 60
         mins = w['duration_minutes'] % 60
@@ -528,7 +552,7 @@ if __name__ == '__main__':
         print(f"\n⭐ Best window: {best['start']} → {best['end']} ({best['duration_minutes']} min)")
 
     # Sun path with weather
-    print(f"\nSun path:")
+    print("\nSun path:")
     print(f"   {'Time':>5}  {'Alt':>6}°  {'Az':>6}°  {'Need':>5}°  {'Cloud':>5}  {'Status'}")
     print(f"   {'─'*5}  {'─'*7}  {'─'*7}  {'─'*6}  {'─'*5}  {'─'*12}")
     for p in report['sun_path']:

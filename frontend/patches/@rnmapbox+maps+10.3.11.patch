@@ -1,0 +1,172 @@
+diff --git a/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/components/mapview/NativeMapViewModule.kt b/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/components/mapview/NativeMapViewModule.kt
+index 38de6c8..4bd11b9 100644
+--- a/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/components/mapview/NativeMapViewModule.kt
++++ b/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/components/mapview/NativeMapViewModule.kt
+@@ -72,6 +72,13 @@ class NativeMapViewModule(context: ReactApplicationContext, val viewTagResolver:
+         }
+     }
+ 
++    override fun setLights(viewRef: ViewRefTag?, lights: String, promise: Promise) {
++        withMapViewOnUIThread(viewRef, promise) {
++            val error = it.setLights(lights)
++            if (error != null) promise.reject(Exception(error)) else promise.resolve(null)
++        }
++    }
++
+     override fun getCenter(viewRef: ViewRefTag?, promise: Promise) {
+         withMapViewOnUIThread(viewRef, promise) {
+             it.getCenter(createCommandResponse(promise))
+diff --git a/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/components/mapview/RNMBXMapView.kt b/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/components/mapview/RNMBXMapView.kt
+index 8f09366..0ad7271 100644
+--- a/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/components/mapview/RNMBXMapView.kt
++++ b/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/components/mapview/RNMBXMapView.kt
+@@ -1271,6 +1271,14 @@ open class RNMBXMapView(private val mContext: Context, var mManager: RNMBXMapVie
+         }
+     }
+ 
++    /** Replaces the style's 3D lights without reloading the style. Returns an error message or null. */
++    fun setLights(lightsJSON: String): String? {
++        val style = mMap.getStyle() ?: return "setLights: style is not loaded yet"
++        val parsed = Value.fromJson(lightsJSON)
++        val lights = parsed.value ?: return "setLights: invalid JSON: ${parsed.error}"
++        return style.setStyleLights(lights).error
++    }
++
+     fun setSourceVisibility(
+         visible: Boolean,
+         sourceId: String,
+diff --git a/node_modules/@rnmapbox/maps/ios/RNMBX/RNMBXMapView.swift b/node_modules/@rnmapbox/maps/ios/RNMBX/RNMBXMapView.swift
+index 0d290ed..bbdf6db 100644
+--- a/node_modules/@rnmapbox/maps/ios/RNMBX/RNMBXMapView.swift
++++ b/node_modules/@rnmapbox/maps/ios/RNMBX/RNMBXMapView.swift
+@@ -1770,6 +1770,39 @@ extension RNMBXMapView {
+     }
+   }
+ 
++  /// Replaces the style's 3D lights (one ambient + one directional) without reloading the style.
++  @objc public func setLightsWithLightsJSON(
++    _ lightsJSON: String,
++    resolver: @escaping RCTPromiseResolveBlock,
++    rejecter: @escaping RCTPromiseRejectBlock
++  ) {
++    do {
++      guard let data = lightsJSON.data(using: .utf8),
++            let lights = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
++        rejecter("setLights", "lights must be a JSON array", nil)
++        return
++      }
++      var ambient: AmbientLight?
++      var directional: DirectionalLight?
++      for light in lights {
++        let lightData = try JSONSerialization.data(withJSONObject: light)
++        switch light["type"] as? String {
++        case "ambient": ambient = try JSONDecoder().decode(AmbientLight.self, from: lightData)
++        case "directional": directional = try JSONDecoder().decode(DirectionalLight.self, from: lightData)
++        default: break
++        }
++      }
++      guard let ambient = ambient, let directional = directional else {
++        rejecter("setLights", "need one ambient and one directional light", nil)
++        return
++      }
++      try self.mapboxMap.setLights(ambient: ambient, directional: directional)
++      resolver(nil)
++    } catch {
++      rejecter("setLights", error.localizedDescription, error)
++    }
++  }
++
+   @objc public func setSourceVisibilityWithVisible(
+     _ visible: Bool,
+     sourceId: String,
+diff --git a/node_modules/@rnmapbox/maps/ios/RNMBX/RNMBXMapViewModule.mm b/node_modules/@rnmapbox/maps/ios/RNMBX/RNMBXMapViewModule.mm
+index 8aaf1a0..b032975 100644
+--- a/node_modules/@rnmapbox/maps/ios/RNMBX/RNMBXMapViewModule.mm
++++ b/node_modules/@rnmapbox/maps/ios/RNMBX/RNMBXMapViewModule.mm
+@@ -120,6 +120,12 @@ RCT_EXPORT_METHOD(setSourceVisibility:(nonnull NSNumber*)viewRef visible:(BOOL)v
+     } reject:reject methodName:@"setSourceVisibility"];
+ }
+ 
++RCT_EXPORT_METHOD(setLights:(nonnull NSNumber*)viewRef lights:(NSString *)lights resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
++    [self withMapView:viewRef block:^(RNMBXMapView *view) {
++        [view setLightsWithLightsJSON:lights resolver:resolve rejecter:reject];
++    } reject:reject methodName:@"setLights"];
++}
++
+ RCT_EXPORT_METHOD(setFeatureState:(nonnull NSNumber*)viewRef featureId:(nonnull NSString *)featureId state:(nonnull NSDictionary<NSString*,id> *)state sourceId:(NSString *)sourceId sourceLayerId:(NSString *)sourceLayerId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
+     [self withMapView:viewRef block:^(RNMBXMapView *view) {
+         [view setFeatureStateWithFeatureId:featureId state:state sourceId:sourceId sourceLayerId:sourceLayerId resolver:resolve rejecter:reject];
+diff --git a/node_modules/@rnmapbox/maps/lib/module/components/MapView.js b/node_modules/@rnmapbox/maps/lib/module/components/MapView.js
+index 18afdcc..007e024 100644
+--- a/node_modules/@rnmapbox/maps/lib/module/components/MapView.js
++++ b/node_modules/@rnmapbox/maps/lib/module/components/MapView.js
+@@ -290,6 +290,14 @@ class MapView extends NativeBridgeComponent(React.PureComponent, NativeMapViewMo
+    * @param  {boolean} writeToDisk If `true`, creates a temporary PNG file and returns a file-system URI, otherwise returns a Base64-encoded PNG image. (Defaults to `false`)
+    * @return {string} A a Base64-encoded PNG image or a file-system URI to a temporary PNG file.
+    */
++  /**
++   * Replaces the style's 3D lights (ambient / directional) without reloading the style,
++   * e.g. to move the sun and its shadows. `lights` uses the style-spec `lights` format.
++   */
++  async setLights(lights) {
++    await this._runNative('setLights', [JSON.stringify(lights)]);
++  }
++
+   async takeSnap(writeToDisk = false) {
+     const res = await this._runNative('takeSnap', [writeToDisk]);
+     return res.uri;
+diff --git a/node_modules/@rnmapbox/maps/lib/typescript/src/components/MapView.d.ts b/node_modules/@rnmapbox/maps/lib/typescript/src/components/MapView.d.ts
+index 2dadd3e..7aebce6 100644
+--- a/node_modules/@rnmapbox/maps/lib/typescript/src/components/MapView.d.ts
++++ b/node_modules/@rnmapbox/maps/lib/typescript/src/components/MapView.d.ts
+@@ -582,6 +582,7 @@ declare class MapView extends MapView_base {
+      * @param {string | null} sourceLayerId - Target source-layer identifier (e.g. 'building'). If `null`, the change affects all layers in the target source.
+      */
+     setSourceVisibility(visible: boolean, sourceId: string, sourceLayerId?: string | null): void;
++    setLights(lights: object[]): Promise<void>;
+     /**
+      * Updates the state map of a feature within a style source.
+      *
+diff --git a/node_modules/@rnmapbox/maps/lib/typescript/src/specs/NativeMapViewModule.d.ts b/node_modules/@rnmapbox/maps/lib/typescript/src/specs/NativeMapViewModule.d.ts
+index 592cf18..744828f 100644
+--- a/node_modules/@rnmapbox/maps/lib/typescript/src/specs/NativeMapViewModule.d.ts
++++ b/node_modules/@rnmapbox/maps/lib/typescript/src/specs/NativeMapViewModule.d.ts
+@@ -4,6 +4,7 @@ export interface Spec extends TurboModule {
+     takeSnap: (viewRef: Int32 | null, writeToDisk: boolean) => Promise<Object>;
+     queryTerrainElevation: (viewRef: Int32 | null, coordinates: ReadonlyArray<number>) => Promise<Object>;
+     setSourceVisibility: (viewRef: Int32 | null, visible: boolean, sourceId: string, sourceLayerId: string) => Promise<Object>;
++    setLights: (viewRef: Int32 | null, lights: string) => Promise<Object>;
+     getCenter: (viewRef: Int32 | null) => Promise<Object>;
+     getCoordinateFromView: (viewRef: Int32 | null, atPoint: ReadonlyArray<number>) => Promise<Object>;
+     getPointInView: (viewRef: Int32 | null, atCoordinate: ReadonlyArray<number>) => Promise<Object>;
+diff --git a/node_modules/@rnmapbox/maps/src/components/MapView.tsx b/node_modules/@rnmapbox/maps/src/components/MapView.tsx
+index 716073a..74869bf 100644
+--- a/node_modules/@rnmapbox/maps/src/components/MapView.tsx
++++ b/node_modules/@rnmapbox/maps/src/components/MapView.tsx
+@@ -886,6 +886,14 @@ class MapView extends NativeBridgeComponent(
+    * @param  {boolean} writeToDisk If `true`, creates a temporary PNG file and returns a file-system URI, otherwise returns a Base64-encoded PNG image. (Defaults to `false`)
+    * @return {string} A a Base64-encoded PNG image or a file-system URI to a temporary PNG file.
+    */
++  /**
++   * Replaces the style's 3D lights (ambient / directional) without reloading the style,
++   * e.g. to move the sun and its shadows. `lights` uses the style-spec `lights` format.
++   */
++  async setLights(lights: object[]): Promise<void> {
++    await this._runNative<void>('setLights', [JSON.stringify(lights)]);
++  }
++
+   async takeSnap(writeToDisk = false): Promise<string> {
+     const res = await this._runNative<{ uri: string }>('takeSnap', [
+       writeToDisk,
+diff --git a/node_modules/@rnmapbox/maps/src/specs/NativeMapViewModule.ts b/node_modules/@rnmapbox/maps/src/specs/NativeMapViewModule.ts
+index c008876..d5ec3c3 100644
+--- a/node_modules/@rnmapbox/maps/src/specs/NativeMapViewModule.ts
++++ b/node_modules/@rnmapbox/maps/src/specs/NativeMapViewModule.ts
+@@ -15,6 +15,7 @@ export interface Spec extends TurboModule {
+     sourceId: string,
+     sourceLayerId: string,
+   ) => Promise<Object>;
++  setLights: (viewRef: Int32 | null, lights: string) => Promise<Object>;
+   getCenter: (viewRef: Int32 | null) => Promise<Object>;
+   getCoordinateFromView: (
+     viewRef: Int32 | null,

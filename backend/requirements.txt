@@ -1,0 +1,3 @@
+fastapi>=0.135
+uvicorn>=0.41
+astral>=3.2
