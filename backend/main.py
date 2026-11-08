@@ -301,6 +301,53 @@ def fetch_weather(lat: float, lon: float, timezone: str,
     return weather
 
 
+def weather_condition(code: int) -> str:
+    """
+    Group Open-Meteo's weather codes (the WMO standard, ~30 codes) into the
+    few conditions the app has an icon for. The app only ever sees these names,
+    so switching weather provider later only means changing this file.
+    """
+    if code == 0:
+        return "clear"
+    if code in (1, 2):
+        return "partly_cloudy"
+    if code == 3:
+        return "cloudy"
+    if code in (45, 48):
+        return "fog"
+    if code in (71, 73, 75, 77, 85, 86):  # checked before rain: these sit inside 51-86
+        return "snow"
+    if code >= 95:
+        return "storm"
+    if 51 <= code <= 82:  # drizzle, rain, showers
+        return "rain"
+    return "cloudy"
+
+
+def fetch_current_weather(lat: float, lon: float) -> dict:
+    """
+    Weather right now at a point, from Open-Meteo.
+    `timezone=auto` makes Open-Meteo also tell us the location's timezone
+    (e.g. "Europe/Madrid"), which the app will use later for other cities.
+    """
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={lat}&longitude={lon}"
+        f"&current=temperature_2m,weather_code,is_day"
+        f"&timezone=auto"
+    )
+    with urllib.request.urlopen(url, timeout=15) as resp:
+        data = json.loads(resp.read().decode())
+
+    current = data["current"]
+    return {
+        "temperature": current["temperature_2m"],
+        "condition": weather_condition(current["weather_code"]),
+        "is_day": bool(current["is_day"]),
+        "timezone": data["timezone"],
+    }
+
+
 # ──────────────────────────────────────────────────────────────
 # OBSTRUCTION ENGINE
 # ──────────────────────────────────────────────────────────────

@@ -18,7 +18,7 @@ import os
 import threading
 import time
 
-from main import overpass_request, parse_overpass_buildings, fetch_weather
+from main import overpass_request, parse_overpass_buildings, fetch_weather, fetch_current_weather
 
 CELL_SIZE_DEG = 0.01             # ~1.1 km north-south, ~0.85 km east-west in Madrid
 CELL_MAX_AGE_DAYS = 90
@@ -149,4 +149,26 @@ def get_weather_cached(lat: float, lon: float, timezone: str, forecast_days: int
     weather = fetch_weather(key[0], key[1], timezone, forecast_days)
     with _weather_lock:
         _weather_cache[key] = (time.time(), weather)
+    return weather
+
+
+# ── Current weather (app header) ───────────────────────────────
+
+CURRENT_WEATHER_MAX_AGE_SECONDS = 15 * 60
+_current_weather_cache: dict = {}
+
+
+def get_current_weather_cached(lat: float, lon: float) -> dict:
+    """
+    Current temperature/conditions, one Open-Meteo request per ~1 km area every
+    15 minutes. 100 people looking at the same neighbourhood = 1 request, not 100.
+    """
+    key = (round(lat, 2), round(lon, 2))
+    with _weather_lock:
+        hit = _current_weather_cache.get(key)
+        if hit and time.time() - hit[0] < CURRENT_WEATHER_MAX_AGE_SECONDS:
+            return hit[1]
+    weather = fetch_current_weather(key[0], key[1])
+    with _weather_lock:
+        _current_weather_cache[key] = (time.time(), weather)
     return weather

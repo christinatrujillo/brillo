@@ -1,3 +1,5 @@
+import * as Location from 'expo-location';
+
 const GOOGLE_PLACES_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY;
 const BRILLO_API = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -79,4 +81,22 @@ async function fetchSunReports(restaurants) {
   return data.results;
 }
 
-export { fetchNearbyRestaurants, fetchSunReports };
+// Weather right now at a point, from the Brillo backend (which asks Open-Meteo and caches it).
+// Returns { temperature, condition, is_day, timezone }.
+async function fetchWeather(latitude, longitude) {
+  const response = await fetch(`${BRILLO_API}/weather?lat=${latitude}&lon=${longitude}`);
+  if (!response.ok) {
+    throw new Error(`Weather failed: HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+// City name at a point ("Madrid"), from the phone's own built-in geocoder: free, no key.
+// Only works when the user has allowed location access; otherwise it throws.
+async function fetchCityName(latitude, longitude) {
+  const [address] = await Location.reverseGeocodeAsync({ latitude, longitude });
+  // Some places have no city (countryside); fall back to the wider area's name.
+  return address?.city || address?.subregion || address?.region || null;
+}
+
+export { fetchNearbyRestaurants, fetchSunReports, fetchWeather, fetchCityName };

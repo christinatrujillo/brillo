@@ -8,11 +8,11 @@ Requires:   pip install -r requirements.txt
 from datetime import datetime, date, timedelta
 import zoneinfo
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
 from main import Terrace, SunTracker, buildings_to_obstacles
-from building_cache import get_buildings_near, get_weather_cached
+from building_cache import get_buildings_near, get_weather_cached, get_current_weather_cached
 
 app = FastAPI(
     title="Brillo API",
@@ -43,6 +43,20 @@ def get_tracker(lat, lon, timezone="Europe/Paris", terrace_height=0):
     if key not in _tracker_cache:
         _tracker_cache[key] = build_tracker(lat, lon, timezone, terrace_height)
     return _tracker_cache[key]
+
+
+@app.get("/weather")
+def current_weather(lat: float = Query(...), lon: float = Query(...)):
+    """
+    Weather right now, for the app header:
+    { temperature, condition ('clear', 'partly_cloudy', 'cloudy', 'fog', 'rain', 'snow', 'storm'),
+      is_day, timezone }
+    """
+    try:
+        return get_current_weather_cached(lat, lon)
+    except Exception as e:
+        # 502 = "a service behind me failed", so the app knows it's not its own mistake.
+        raise HTTPException(status_code=502, detail=f"Weather service unavailable: {e}")
 
 
 @app.get("/is-sunny")

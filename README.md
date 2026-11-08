@@ -27,7 +27,7 @@ Built with React Native (Expo) + FastAPI + Google Places + OpenStreetMap.
 brillo/
 ├── backend/
 │   ├── main.py              # Core sun tracking engine (SunTracker, building obstacles, etc.)
-│   ├── api.py               # FastAPI endpoints (/batch-sun-report, /sun-report, /is-sunny, /batch-check, /forecast, /obstacles)
+│   ├── api.py               # FastAPI endpoints (/weather, /batch-sun-report, /sun-report, /is-sunny, /batch-check, /forecast, /obstacles)
 │   ├── building_cache.py    # Building (OpenStreetMap) and weather caches
 │   └── requirements.txt     # Python dependencies
 │
@@ -145,7 +145,7 @@ import Slider from '@react-native-community/slider/dist/Slider';
 ### High Priority
 - [x] **Wire up the time slider** — Currently the slider doesn't change pin colors. Need to call `/sun-report` endpoint to get full-day sun data, then filter by selected time
 - [x] **Add batch sun-report endpoint to FastAPI** — `/batch-sun-report` returns full-day reports for all restaurants in one request
-- [ ] **Real city and weather in the header** — "Madrid" and "22°" are placeholders
+- [x] **Real city and weather in the header** — city from the phone's geocoder, temperature + weather icon from `/weather` (Open-Meteo, cached 15 min per ~1 km area)
 - [ ] **Other cities** — The timezone is fixed to Europe/Madrid (frontend and backend requests)
 - [x] **Load restaurants when moving the map** — Currently only fetches restaurants for starting location. Detect when user pans/zooms and fetch new restaurants for the visible region
 - [x] **Restaurant detail panel** — When tapping a pin, show a panel/page with: restaurant name, address, rating, sun status, sunny hours for the day, and a link to directions
@@ -191,6 +191,8 @@ import Slider from '@react-native-community/slider/dist/Slider';
 - `@react-native-community/slider` must be imported from `dist/Slider` directly (see Setup)
 - Public Overpass servers sometimes refuse or time out; sun colors stay gray-blue for areas whose buildings couldn't be downloaded
 - Open-Meteo cloud cover data may not always match real-time conditions
+- Open-Meteo's free API is for **non-commercial use only** — needs a paid plan (or another provider) before launch
+- The header city name needs location permission (it uses the phone's geocoder). If permission is denied the map opens on central Madrid with no city name
 - Note: Set your local machine's IP in the frontend/.env file under EXPO_PUBLIC_BACKEND_URL so the mobile app can communicate with the FastAPI server over your local WiFi.
 
 ---

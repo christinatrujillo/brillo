@@ -8,12 +8,16 @@ import Mapbox from '@rnmapbox/maps';
 import Map from './components/Map';
 import TimeSlider from './components/TimeSlider';
 import RestaurantPanel from './components/RestaurantPanel';
-import { fetchNearbyRestaurants, fetchSunReports } from './services/brillo-api';
+import { fetchNearbyRestaurants, fetchSunReports, fetchWeather, fetchCityName } from './services/brillo-api';
+import { weatherIcon } from './utils/weatherIcon';
 
 Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN);
 
 // How long the map must stay still before loading restaurants for the new area.
 const MAP_MOVE_DEBOUNCE_MS = 1500;
+
+// Where the map opens when we can't get the phone's location (Puerta del Sol, Madrid).
+const FALLBACK_REGION = { latitude: 40.4168, longitude: -3.7038 };
 
 export default function App() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
@@ -22,6 +26,8 @@ export default function App() {
   const [restaurants, setRestaurants] = useState([]);
   const [region, setRegion] = useState(null);
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
+  const [cityName, setCityName] = useState(null); // header city, e.g. "Madrid"
+  const [weather, setWeather] = useState(null);   // header weather, from the backend
 
   const mapMoveTimer = useRef(null);
 
@@ -47,24 +53,45 @@ export default function App() {
     }
   };
 
+  // City name + weather for the header. Loaded separately so that if one fails,
+  // the other still shows up.
+  const loadAreaInfo = (latitude, longitude) => {
+    fetchCityName(latitude, longitude)
+      .then(setCityName)
+      .catch((error) => {
+        console.log('City name error:', error.message);
+        setCityName(null); // show no city rather than the wrong one
+      });
+    fetchWeather(latitude, longitude)
+      .then(setWeather)
+      .catch((error) => console.log('Weather error:', error.message));
+  };
+
   useEffect(() => {
     if (!fontsLoaded) return;
 
     async function loadLocation() {
+      // Start on central Madrid; replaced by the phone's location if we can get it.
+      // This way the app never gets stuck on a blank screen.
+      let start = FALLBACK_REGION;
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          console.log('Location permission denied');
-          return;
+        if (status === 'granted') {
+          const location = await Location.getCurrentPositionAsync({});
+          start = { latitude: location.coords.latitude, longitude: location.coords.longitude };
+        } else {
+          console.log('Location permission denied; opening on central Madrid');
         }
-
-        const location = await Location.getCurrentPositionAsync({});
-        const { latitude, longitude } = location.coords;
-        setRegion({ latitude, longitude });
-        await loadRestaurants(latitude, longitude);
       } catch (error) {
-        console.error('Location error:', error);
+        // e.g. location turned off in the phone's settings
+        console.log('Location error; opening on central Madrid:', error.message);
       }
+
+      setRegion(start);
+      loadAreaInfo(start.latitude, start.longitude);
+      loadRestaurants(start.latitude, start.longitude).catch((error) => {
+        console.error('Failed to load restaurants:', error);
+      });
     }
 
     loadLocation();
@@ -73,6 +100,7 @@ export default function App() {
   const handleMapMove = ({ latitude, longitude }) => {
     if (mapMoveTimer.current) clearTimeout(mapMoveTimer.current);
     mapMoveTimer.current = setTimeout(() => {
+      loadAreaInfo(latitude, longitude);
       loadRestaurants(latitude, longitude).catch((error) => {
         console.error('Failed to load restaurants:', error);
       });
@@ -97,11 +125,14 @@ export default function App() {
             <Text style={styles.title}>Brillo</Text>
             <Ionicons name="chevron-down" size={14} color="white" style={{ marginLeft: 6 }} />
           </TouchableOpacity>
-          <Text style={styles.cityName}>Madrid</Text>
-          <View style={styles.weatherWrapper}>
-            <Ionicons name="sunny" size={18} color="white" />
-            <Text style={styles.tempText}>22°</Text>
-          </View>
+          {cityName && <Text style={styles.cityName}>{cityName}</Text>}
+          {/* Hidden until the real weather arrives, instead of showing a made-up number. */}
+          {weather && (
+            <View style={styles.weatherWrapper}>
+              <Ionicons name={weatherIcon(weather)} size={18} color="white" />
+              <Text style={styles.tempText}>{Math.round(weather.temperature)}°</Text>
+            </View>
+          )}
         </View>
         <TimeSlider
           displayTime={displayTime}
