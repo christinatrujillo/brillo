@@ -325,16 +325,11 @@ def weather_condition(code: int) -> str:
 
 
 def fetch_current_weather(lat: float, lon: float) -> dict:
-    """
-    Weather right now at a point, from Open-Meteo.
-    `timezone=auto` makes Open-Meteo also tell us the location's timezone
-    (e.g. "Europe/Madrid"), which the app will use later for other cities.
-    """
+    """Weather right now at a point, from Open-Meteo."""
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={lat}&longitude={lon}"
         f"&current=temperature_2m,weather_code,is_day"
-        f"&timezone=auto"
     )
     with urllib.request.urlopen(url, timeout=15) as resp:
         data = json.loads(resp.read().decode())
@@ -344,7 +339,6 @@ def fetch_current_weather(lat: float, lon: float) -> dict:
         "temperature": current["temperature_2m"],
         "condition": weather_condition(current["weather_code"]),
         "is_day": bool(current["is_day"]),
-        "timezone": data["timezone"],
     }
 
 

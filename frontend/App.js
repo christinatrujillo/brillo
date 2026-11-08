@@ -145,6 +145,7 @@ export default function App() {
         restaurants={restaurants}
         selectedTime={selectedTime}
         sunTime={displayTime}
+        timezone={weather?.timezone}
         onMarkerPress={setSelectedRestaurant}
         onMapMove={handleMapMove}
       />

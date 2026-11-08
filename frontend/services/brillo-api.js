@@ -67,7 +67,6 @@ async function fetchSunReports(restaurants) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      timezone: 'Europe/Madrid',
       locations: restaurants.map((r) => ({ id: r.id, lat: r.latitude, lon: r.longitude })),
     }),
   });

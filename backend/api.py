@@ -10,6 +10,7 @@ import zoneinfo
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
+from timezonefinder import TimezoneFinder
 
 from main import Terrace, SunTracker, buildings_to_obstacles
 from building_cache import get_buildings_near, get_weather_cached, get_current_weather_cached
@@ -21,6 +22,13 @@ app = FastAPI(
 )
 
 _tracker_cache = {}
+
+_timezone_finder = TimezoneFinder()  # loads the world's timezone borders once, at startup
+
+
+def timezone_at(lat, lon):
+    """Timezone name for a point, e.g. 'Europe/Madrid'. 'UTC' if it's in the open sea."""
+    return _timezone_finder.timezone_at(lat=lat, lng=lon) or "UTC"
 
 
 def _cache_key(lat, lon):
@@ -53,7 +61,7 @@ def current_weather(lat: float = Query(...), lon: float = Query(...)):
       is_day, timezone }
     """
     try:
-        return get_current_weather_cached(lat, lon)
+        return {**get_current_weather_cached(lat, lon), "timezone": timezone_at(lat, lon)}
     except Exception as e:
         # 502 = "a service behind me failed", so the app knows it's not its own mistake.
         raise HTTPException(status_code=502, detail=f"Weather service unavailable: {e}")
@@ -125,7 +133,7 @@ class BatchRequest(BaseModel):
 
 
 class BatchSunReportRequest(BaseModel):
-    timezone: str = "Europe/Paris"
+    timezone: str | None = None  # optional: if missing, worked out from each location
     date: str | None = None
     locations: list[Location]
 
@@ -133,12 +141,15 @@ class BatchSunReportRequest(BaseModel):
 @app.post("/batch-sun-report")
 def batch_sun_report(request: BatchSunReportRequest):
     """Full-day sun reports for many locations in one request (one per restaurant)."""
-    target = (date.fromisoformat(request.date) if request.date
-              else datetime.now(zoneinfo.ZoneInfo(request.timezone)).date())
     results = []
     for loc in request.locations:
         try:
-            tracker = get_tracker(loc.lat, loc.lon, request.timezone, loc.terrace_height)
+            # Use the timezone the app sent, if any; otherwise look it up from the location.
+            tz = request.timezone or timezone_at(loc.lat, loc.lon)
+            # "Today" in that place (it can already be tomorrow in Tokyo).
+            target = (date.fromisoformat(request.date) if request.date
+                      else datetime.now(zoneinfo.ZoneInfo(tz)).date())
+            tracker = get_tracker(loc.lat, loc.lon, tz, loc.terrace_height)
             results.append({"id": loc.id,
                             "report": tracker.calculate_day(target, interval_minutes=2)})
         except Exception as e:

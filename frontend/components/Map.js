@@ -2,13 +2,13 @@ import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useRef } from 'react';
-import { sunPosition, madridTimeToday } from '../utils/sunPosition';
+import { sunPosition, localTimeToday } from '../utils/sunPosition';
 import { getSunStatus, SUN_STATUS } from '../utils/sunStatus';
 
 // Our lights: soft daylight from all sides, plus a directional "sun" placed where the
 // real sun is at the slider time, casting the building shadows.
-function buildLights(hour, latitude, longitude) {
-    const sun = sunPosition(madridTimeToday(hour), latitude, longitude);
+function buildLights(hour, latitude, longitude, timezone) {
+    const sun = sunPosition(localTimeToday(hour, timezone), latitude, longitude);
     const sunUp = sun.altitude > 0;
     return [
         { id: 'ambient', type: 'ambient', properties: { color: 'hsl(0, 0%, 100%)', intensity: 0.8 } },
@@ -49,7 +49,7 @@ function buildStyleJSON(lights) {
     });
 }
 
-export default function Map({ region, restaurants, selectedTime, sunTime = selectedTime, onMarkerPress, onMapMove }) {
+export default function Map({ region, restaurants, selectedTime, sunTime = selectedTime, timezone, onMarkerPress, onMapMove }) {
     const cameraRef = useRef(null);
     const mapRef = useRef(null);
     const lastCenter = useRef(null);
@@ -57,8 +57,8 @@ export default function Map({ region, restaurants, selectedTime, sunTime = selec
 
     // Follows the slider while it's being dragged (sunTime), not just on release.
     const lights = useMemo(
-        () => buildLights(sunTime, region.latitude, region.longitude),
-        [sunTime, region.latitude, region.longitude],
+        () => buildLights(sunTime, region.latitude, region.longitude, timezone),
+        [sunTime, region.latitude, region.longitude, timezone],
     );
 
     // The style is built once, with the starting sun. Never rebuilt, because a new style reloads the map.

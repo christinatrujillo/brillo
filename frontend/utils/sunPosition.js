@@ -41,22 +41,23 @@ export function sunPosition(date, latitude, longitude) {
     return { azimuth, altitude };
 }
 
-// A Date for today at `hour` o'clock Madrid time, regardless of the phone's timezone.
-export function madridTimeToday(hour) {
+// A Date for today at `hour` o'clock in `timezone` (e.g. 'Europe/Lisbon').
+// Without a timezone, the phone's own timezone is used.
+export function localTimeToday(hour, timezone) {
     const now = new Date();
     let y, mo, d, offsetMinutes;
     try {
         const parts = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'Europe/Madrid', year: 'numeric', month: 'numeric', day: 'numeric',
+            timeZone: timezone, year: 'numeric', month: 'numeric', day: 'numeric',
             hour: 'numeric', minute: 'numeric', hourCycle: 'h23',
         }).formatToParts(now);
         const get = (type) => Number(parts.find((p) => p.type === type).value);
         y = get('year'); mo = get('month'); d = get('day');
-        // Madrid's offset from UTC right now (+60 in winter, +120 in summer)
-        const madridAsUtc = Date.UTC(y, mo - 1, d, get('hour') % 24, get('minute'));
-        offsetMinutes = Math.round((madridAsUtc - now.getTime()) / 60000 / 15) * 15;
+        // The place's offset from UTC right now (e.g. Madrid: +60 in winter, +120 in summer)
+        const localAsUtc = Date.UTC(y, mo - 1, d, get('hour') % 24, get('minute'));
+        offsetMinutes = Math.round((localAsUtc - now.getTime()) / 60000 / 15) * 15;
     } catch (e) {
-        // No timezone support: assume the phone is on Madrid time
+        // No timezone support on this phone: use the phone's own timezone
         y = now.getFullYear(); mo = now.getMonth() + 1; d = now.getDate();
         offsetMinutes = -now.getTimezoneOffset();
     }
