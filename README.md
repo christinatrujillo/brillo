@@ -146,7 +146,7 @@ import Slider from '@react-native-community/slider/dist/Slider';
 - [x] **Wire up the time slider** — Currently the slider doesn't change pin colors. Need to call `/sun-report` endpoint to get full-day sun data, then filter by selected time
 - [x] **Add batch sun-report endpoint to FastAPI** — `/batch-sun-report` returns full-day reports for all restaurants in one request
 - [x] **Real city and weather in the header** — city from the phone's geocoder, temperature + weather icon from `/weather` (Open-Meteo, cached 15 min per ~1 km area)
-- [ ] **Other cities** — The timezone is fixed to Europe/Madrid (frontend and backend requests)
+- [x] **Other cities** — Each location's timezone is worked out from its coordinates (`timezonefinder` on the backend)
 - [x] **Load restaurants when moving the map** — Currently only fetches restaurants for starting location. Detect when user pans/zooms and fetch new restaurants for the visible region
 - [x] **Restaurant detail panel** — When tapping a pin, show a panel/page with: restaurant name, address, rating, sun status, sunny hours for the day, and a link to directions
 
@@ -173,6 +173,7 @@ import Slider from '@react-native-community/slider/dist/Slider';
 - [ ] **Own building data** — Replace public Overpass (unreliable) with an OpenStreetMap extract (e.g. Geofabrik)
 - [ ] **Deploy backend** — Move FastAPI from localhost to Railway, Render, or Fly.io for real users
 - [ ] **Database** — Add PostgreSQL (via Supabase or similar) for storing terrace-specific data, user favorites, and cached results
+- [ ] **Real terrace positions** — Restaurant pins sit inside their building, so the backend ignores that building (otherwise it blocks the sun all day). A terrace on the shady side of its own building can therefore show sunny. Fix: use real terrace positions, e.g. Madrid's open-data terrace dataset
 - [ ] **Terrace boundary data** — Store actual terrace shapes (not just pin locations) for more accurate sun calculations
 
 ### Pre-Launch

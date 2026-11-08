@@ -221,6 +221,16 @@ def _angular_width(distance: float, geometry: list[dict], lat: float, lon: float
     return max(diffs) - min(diffs) if diffs else 10.0
 
 
+def _point_in_polygon(lat: float, lon: float, geometry: list[dict]) -> bool:
+    """Is the point inside the building outline? (ray casting)"""
+    pts = [(p["lat"], p["lon"]) for p in geometry]
+    inside = False
+    for (lat1, lon1), (lat2, lon2) in zip(pts, pts[1:] + pts[:1]):
+        if (lon1 > lon) != (lon2 > lon) and lat < (lat2 - lat1) * (lon - lon1) / (lon2 - lon1) + lat1:
+            inside = not inside
+    return inside
+
+
 def buildings_to_obstacles(buildings: list[dict], terrace_lat: float,
                            terrace_lon: float, terrace_height: float = 0,
                            default_height: float = 12.0) -> list[Obstacle]:
@@ -240,10 +250,12 @@ def buildings_to_obstacles(buildings: list[dict], terrace_lat: float,
         if relative_height <= 0:
             continue  # building is shorter than the terrace
 
+        # shortcut: a terrace on the shady side of its own building shows sunny; fix with real terrace positions (README TODO)
+        if _point_in_polygon(terrace_lat, terrace_lon, b.get("geometry", [])):
+            continue  # the building the restaurant is in
+
         dist = _haversine_distance(terrace_lat, terrace_lon,
                                    b["centroid_lat"], b["centroid_lon"])
-        if dist < 2:
-            continue  # skip the building we're standing on
 
         center_bearing = _bearing(terrace_lat, terrace_lon,
                                   b["centroid_lat"], b["centroid_lon"])
